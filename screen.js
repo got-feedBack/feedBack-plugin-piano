@@ -79,9 +79,15 @@ function _saveCfg(key, val) {
 // ═══════════════════════════════════════════════════════════════════════
 
 // ── MIDI input ────────────────────────────────────────────────────────
-let _midiAccess = null;
-let _midiInput = null;
-let _midiActive = false;     // gates _midiInput.onmidimessage wiring
+// MIDI is sourced from the core `midi-input` capability domain
+// (window.slopsmith.midiInput) rather than a private requestMIDIAccess() — one
+// device-access boundary shared with drums/keys/onboarding.
+let _midiReady = false;      // discover() has run
+let _midiHandle = null;      // live domain session handle (addListener/removeListener)
+let _midiListener = null;    // the addListener callback wrapping _midiOnMessage
+let _midiStateSub = false;   // subscribed to midi-input:sources-changed
+let _midiInput = null;       // selected source descriptor { id, name } (UI selection state)
+let _midiActive = false;     // gates the live listener wiring
 // Wave C: routes incoming MIDI events to the currently-focused piano
 // instance (null when no instance is active). Instances claim this
 // on focus-change and release it on defocus / destroy.
@@ -275,16 +281,33 @@ function _synthSetVolume(vol) {
 // Web MIDI input (module-level — one MIDI access per tab)
 // ═══════════════════════════════════════════════════════════════════════
 
+// The core midi-input domain, if present (it ships with core).
+function _mi() {
+    const m = window.slopsmith && window.slopsmith.midiInput;
+    return (m && m.version === 1) ? m : null;
+}
+
+// Domain sources shaped like the old MIDIInput list: { id, name, key }.
+// sourceId == the old MIDIInput.id, so stored `midiInputId` stays compatible.
+function _midiSources() {
+    const mi = _mi();
+    if (!mi) return [];
+    return mi.listSources().map(s => ({ id: s.sourceId, name: s.label, key: s.logicalSourceKey }));
+}
+
 async function _midiInit() {
-    if (_midiAccess) return;
-    if (!navigator.requestMIDIAccess) return;
+    const mi = _mi();
+    if (!mi || _midiReady) return;
     try {
-        _midiAccess = await navigator.requestMIDIAccess({ sysex: false });
-        _midiAccess.onstatechange = () => _midiUpdateAllDeviceLists();
+        await mi.discover();           // permission boundary (requestMIDIAccess)
+        _midiReady = true;
+        // Refresh device lists on plug/unplug (replaces MIDIAccess.onstatechange).
+        if (!_midiStateSub && window.slopsmith && typeof window.slopsmith.on === 'function') {
+            _midiStateSub = true;
+            window.slopsmith.on('midi-input:sources-changed', () => _midiUpdateAllDeviceLists());
+        }
         _midiAutoConnect();
-        // Populate whatever settings panels are open — may be zero
-        // on first init, but if any instance has its settings open
-        // we want the MIDI <select> filled.
+        // Populate whatever settings panels are open.
         _midiUpdateAllDeviceLists();
     } catch (e) {
         console.warn('[Piano] MIDI access denied:', e);
@@ -292,31 +315,27 @@ async function _midiInit() {
 }
 
 function _midiAutoConnect() {
-    if (!_midiAccess) return;
-    const inputs = [];
-    _midiAccess.inputs.forEach(inp => inputs.push(inp));
-    if (!inputs.length) return;
+    const sources = _midiSources();
+    if (!sources.length) return;
 
     const raw = _readStore(STORE_KEYS.midiInputId);
     if (raw === '') return;  // explicit "None" opt-out
 
-    const target = inputs.find(i => i.id === raw) || inputs[0];
+    const target = sources.find(s => s.id === raw) || sources[0];
     _midiConnect(target.id);
 }
 
-function _midiConnect(id) {
-    if (_midiInput) _midiInput.onmidimessage = null;
+async function _midiConnect(id) {
+    const mi = _mi();
+    // Tear down any existing live session.
+    if (_midiHandle && _midiListener) { try { _midiHandle.removeListener(_midiListener); } catch (_) { /* best-effort */ } }
+    if (mi && _midiInput) { try { mi.close({ requester: 'piano', logicalSourceKey: 'web-midi::' + _midiInput.id }); } catch (_) { /* best-effort */ } }
+    _midiHandle = null;
+    _midiListener = null;
     _midiInput = null;
 
-    // Release anything currently sounding + clear per-instance
-    // held state on EVERY live instance, not just the focused one.
-    // _activeInstance can be null (no panel focused yet, or
-    // splitscreen-toggle race) or stale (focus swapped between
-    // device events). Iterating _instances guarantees no panel
-    // shows "stuck" held keys when it later becomes focused —
-    // _heldNotes / _sustainedNotes track per-instance visual
-    // state and need to be cleared in lockstep with the shared
-    // synth envelope cancel.
+    // Release anything currently sounding + clear per-instance held state on
+    // EVERY live instance, not just the focused one (see splitscreen notes).
     _synthReleaseAll();
     for (const inst of _instances) {
         if (inst && typeof inst._releaseAllHeld === 'function') {
@@ -326,27 +345,37 @@ function _midiConnect(id) {
 
     _saveCfg('midiInputId', id || '');
 
-    if (!id || !_midiAccess) {
+    if (!id || !mi) {
         _midiUpdateAllDeviceLists();
         return;
     }
-    _midiAccess.inputs.forEach(inp => {
-        if (inp.id === id) {
-            _midiInput = inp;
-            if (_midiActive) _midiInput.onmidimessage = _midiOnMessage;
+    const src = _midiSources().find(s => s.id === id);
+    if (!src) { _midiUpdateAllDeviceLists(); return; }
+    _midiInput = { id: src.id, name: src.name };   // selection descriptor for the UI
+    try {
+        await mi.select(src.key);
+        const res = await mi.open({ requester: 'piano', logicalSourceKey: src.key });
+        if (res && res.handle) {
+            _midiHandle = res.handle;
+            // The domain handle delivers raw MIDI data; adapt to the old
+            // MIDIMessageEvent shape so _midiOnMessage stays unchanged.
+            _midiListener = (data) => _midiOnMessage({ data });
+            if (_midiActive) _midiHandle.addListener(_midiListener);
         }
-    });
+    } catch (e) {
+        console.warn('[Piano] MIDI open failed:', e);
+    }
     _midiUpdateAllDeviceLists();
 }
 
 function _midiPauseHandler() {
     _midiActive = false;
-    if (_midiInput) _midiInput.onmidimessage = null;
+    if (_midiHandle && _midiListener) { try { _midiHandle.removeListener(_midiListener); } catch (_) { /* best-effort */ } }
 }
 
 function _midiResumeHandler() {
     _midiActive = true;
-    if (_midiInput) _midiInput.onmidimessage = _midiOnMessage;
+    if (_midiHandle && _midiListener) { try { _midiHandle.addListener(_midiListener); } catch (_) { /* best-effort */ } }
 }
 
 function _midiOnMessage(e) {
@@ -379,9 +408,7 @@ function _midiOnMessage(e) {
 }
 
 function _midiUpdateAllDeviceLists() {
-    if (!_midiAccess) return;
-    const inputs = [];
-    _midiAccess.inputs.forEach(inp => inputs.push(inp));
+    const inputs = _midiSources();
 
     // Every instance's settings panel (if open) has a
     // `.piano-midi-select` node. Iterate all of them so a
