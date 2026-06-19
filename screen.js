@@ -355,7 +355,14 @@ function _midiReconcileSources() {
             if (inst && typeof inst._releaseAllHeld === 'function') inst._releaseAllHeld();
         }
     }
-    if (!_midiInput) _midiAutoConnect();
+    // Reconnect ONLY to the saved device when it's (re)present. Don't fall back to
+    // another input here: _midiConnect persists its id, so a fallback during a
+    // transient unplug would overwrite the user's saved device (the original
+    // returns on replug and reconnects then). A deliberate switch goes via the UI.
+    if (!_midiInput) {
+        const saved = _readStore(STORE_KEYS.midiInputId);
+        if (saved && _midiSources().some(s => s.id === saved)) _midiConnect(saved);
+    }
     _midiUpdateAllDeviceLists();
 }
 
@@ -432,6 +439,11 @@ async function _midiConnect(id) {
 }
 
 function _midiResumeHandler() {
+    // Idempotent: a second instance init (splitscreen / re-init) calls this while
+    // already active. The domain handle's addListener is Set-backed, but don't
+    // rely on the provider de-duping — re-adding could double-deliver each MIDI
+    // event to the focused instance, doubling note-ons/hits.
+    if (_midiActive) return;
     _midiActive = true;
     if (_midiHandle && _midiListener) { try { _midiHandle.addListener(_midiListener); } catch (_) { /* best-effort */ } }
 }
