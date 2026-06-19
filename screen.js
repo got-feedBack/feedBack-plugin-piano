@@ -307,7 +307,12 @@ async function _midiInit() {
     if (!mi) return;
     // Already discovered: re-run auto-connect so a re-mount after a full release
     // (or a settings re-open) reconnects from the saved pick instead of no-opping.
-    if (_midiReady) { _midiAutoConnect(); return; }
+    // Already discovered: only (re)connect when there's no live session. A
+    // repeated _midiInit (settings panel open, extra splitscreen instance) must
+    // NOT re-enter _midiConnect on an active handle — that tears down the live
+    // session and releases held notes for no reason. After a full release the
+    // handle is null, so reconnect happens then.
+    if (_midiReady) { if (!_midiHandle) _midiAutoConnect(); return; }
     if (_midiInitPromise) return _midiInitPromise;
     _midiInitPromise = (async () => {
         try {
@@ -360,8 +365,16 @@ function _midiReconcileSources() {
     // transient unplug would overwrite the user's saved device (the original
     // returns on replug and reconnects then). A deliberate switch goes via the UI.
     if (!_midiInput) {
-        const key = _midiResolveSaved(_readStore(STORE_KEYS.midiInputId), _midiSources());
-        if (key) _midiConnect(key);
+        const sources = _midiSources();
+        const raw = _readStore(STORE_KEYS.midiInputId);
+        if (raw === '') {
+            // explicit None — stay disconnected.
+        } else {
+            const key = _midiResolveSaved(raw, sources);
+            if (key) _midiConnect(key);                              // saved device present → reconnect
+            else if (raw == null && sources.length) _midiConnect(sources[0].key);  // never picked → first-hotplug
+            // else: a saved pick exists but is absent → preserve (reconnect on replug)
+        }
     }
     _midiUpdateAllDeviceLists();
 }
