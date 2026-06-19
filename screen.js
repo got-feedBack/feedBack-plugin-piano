@@ -296,27 +296,41 @@ function _midiSources() {
     return mi.listSources().map(s => ({ id: s.sourceId, name: s.label, key: s.logicalSourceKey }));
 }
 
+// In-flight guard around discover(): splitscreen calls _midiInit() once per
+// instance; N concurrent inits would otherwise issue N discover() calls (each a
+// requestMIDIAccess via the provider) and race through _midiAutoConnect() before
+// the first resolves. Concurrent inits share the same discovery attempt.
+let _midiInitPromise = null;
+
 async function _midiInit() {
     const mi = _mi();
     if (!mi || _midiReady) return;
-    try {
-        const r = await mi.discover();  // permission boundary (requestMIDIAccess)
-        // Only latch ready on a successful discovery — a denied/unavailable
-        // outcome must NOT latch, or reopening the panel never retries and MIDI
-        // stays unavailable until a page reload.
-        if (!r || r.outcome !== 'handled') return;
-        _midiReady = true;
-        // Refresh device lists on plug/unplug (replaces MIDIAccess.onstatechange).
-        if (!_midiStateSub && window.slopsmith && typeof window.slopsmith.on === 'function') {
-            _midiStateSub = true;
-            window.slopsmith.on('midi-input:sources-changed', () => _midiUpdateAllDeviceLists());
+    if (_midiInitPromise) return _midiInitPromise;
+    _midiInitPromise = (async () => {
+        try {
+            const r = await mi.discover();  // permission boundary (requestMIDIAccess)
+            // Only latch ready on a successful discovery — a denied/unavailable
+            // outcome must NOT latch, or reopening the panel never retries and MIDI
+            // stays unavailable until a page reload.
+            if (!r || r.outcome !== 'handled') return;
+            _midiReady = true;
+            // Refresh device lists on plug/unplug (replaces MIDIAccess.onstatechange).
+            if (!_midiStateSub && window.slopsmith && typeof window.slopsmith.on === 'function') {
+                _midiStateSub = true;
+                window.slopsmith.on('midi-input:sources-changed', () => _midiUpdateAllDeviceLists());
+            }
+            _midiAutoConnect();
+            // Populate whatever settings panels are open.
+            _midiUpdateAllDeviceLists();
+        } catch (e) {
+            console.warn('[Piano] MIDI access denied:', e);
+        } finally {
+            // On success future calls short-circuit on `_midiReady`; on rejection,
+            // releasing the slot lets a later init() retry.
+            _midiInitPromise = null;
         }
-        _midiAutoConnect();
-        // Populate whatever settings panels are open.
-        _midiUpdateAllDeviceLists();
-    } catch (e) {
-        console.warn('[Piano] MIDI access denied:', e);
-    }
+    })();
+    return _midiInitPromise;
 }
 
 function _midiAutoConnect() {
