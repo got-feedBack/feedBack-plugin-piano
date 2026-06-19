@@ -343,7 +343,7 @@ async function _midiInit() {
 // the saved device when it's replugged, or falls back to another input. Then
 // refresh the dropdowns. If the selected device is unaffected, just refresh.
 function _midiReconcileSources() {
-    if (_midiInput && !_midiSources().some(s => s.id === _midiInput.id)) {
+    if (_midiInput && !_midiSources().some(s => s.key === _midiInput.key)) {
         if (_midiHandle && _midiListener) { try { _midiHandle.removeListener(_midiListener); } catch (_) { /* best-effort */ } }
         _midiHandle = null;
         _midiListener = null;
@@ -360,10 +360,20 @@ function _midiReconcileSources() {
     // transient unplug would overwrite the user's saved device (the original
     // returns on replug and reconnects then). A deliberate switch goes via the UI.
     if (!_midiInput) {
-        const saved = _readStore(STORE_KEYS.midiInputId);
-        if (saved && _midiSources().some(s => s.id === saved)) _midiConnect(saved);
+        const key = _midiResolveSaved(_readStore(STORE_KEYS.midiInputId), _midiSources());
+        if (key) _midiConnect(key);
     }
     _midiUpdateAllDeviceLists();
+}
+
+// Resolve a persisted selection to a current source's logicalSourceKey. Handles
+// both the new logicalSourceKey storage AND legacy bare web-midi sourceId saves
+// (pre-domain), returning the canonical key, or null when the device is absent.
+function _midiResolveSaved(saved, sources) {
+    if (!saved) return null;
+    let m = sources.find(s => s.key === saved);    // new: stored logicalSourceKey
+    if (!m) m = sources.find(s => s.id === saved);  // legacy: bare web-midi sourceId
+    return m ? m.key : null;
 }
 
 function _midiAutoConnect() {
@@ -373,11 +383,12 @@ function _midiAutoConnect() {
     const raw = _readStore(STORE_KEYS.midiInputId);
     if (raw === '') return;  // explicit "None" opt-out
 
-    const target = sources.find(s => s.id === raw) || sources[0];
-    _midiConnect(target.id);
+    // Resolve the saved selection (logicalSourceKey, or a legacy sourceId) and
+    // fall back to the first input when it's absent.
+    _midiConnect(_midiResolveSaved(raw, sources) || sources[0].key);
 }
 
-async function _midiConnect(id) {
+async function _midiConnect(key) {
     const myGen = ++_midiConnectSeq;
     const mi = _mi();
     // Tear down any existing live session.
@@ -396,13 +407,15 @@ async function _midiConnect(id) {
         }
     }
 
-    _saveCfg('midiInputId', id || '');
+    // Store the globally-unique logicalSourceKey (not the provider-local
+    // sourceId). Empty key is the explicit "None" opt-out.
+    _saveCfg('midiInputId', key || '');
 
-    if (!id || !mi) {
+    if (!key || !mi) {
         _midiUpdateAllDeviceLists();
         return;
     }
-    const src = _midiSources().find(s => s.id === id);
+    const src = _midiSources().find(s => s.key === key);
     if (!src) { _midiUpdateAllDeviceLists(); return; }
     _midiInput = { id: src.id, name: src.name, key: src.key };   // selection descriptor for the UI
     // No live renderer to consume OR release a session — don't hold one open
@@ -517,9 +530,9 @@ function _midiUpdateAllDeviceLists() {
         sel.appendChild(noneOpt);
         for (const inp of inputs) {
             const opt = document.createElement('option');
-            opt.value = inp.id;
+            opt.value = inp.key;
             opt.textContent = inp.name || inp.manufacturer || inp.id || 'Unknown device';
-            if (_midiInput && _midiInput.id === inp.id) opt.selected = true;
+            if (_midiInput && _midiInput.key === inp.key) opt.selected = true;
             sel.appendChild(opt);
         }
     }
