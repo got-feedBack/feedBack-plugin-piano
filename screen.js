@@ -427,8 +427,11 @@ function _midiReleaseSession() {
     _midiHandle = null;
     _midiListener = null;
     _midiInput = null;
-    _midiReady = false;
-    _midiInitPromise = null;
+    // Intentionally leave _midiReady latched and _midiInitPromise alone: _midiInit
+    // re-runs _midiAutoConnect on a ready re-mount (no re-discover needed), and
+    // clearing the in-flight promise here would let a quick remount during a
+    // pending discover() start a SECOND requestMIDIAccess, defeating the guard.
+    // The in-flight init clears its own promise in its finally.
 }
 
 function _midiOnMessage(e) {
