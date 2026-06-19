@@ -400,14 +400,27 @@ async function _midiConnect(id) {
     _midiUpdateAllDeviceLists();
 }
 
-function _midiPauseHandler() {
-    _midiActive = false;
-    if (_midiHandle && _midiListener) { try { _midiHandle.removeListener(_midiListener); } catch (_) { /* best-effort */ } }
-}
-
 function _midiResumeHandler() {
     _midiActive = true;
     if (_midiHandle && _midiListener) { try { _midiHandle.addListener(_midiListener); } catch (_) { /* best-effort */ } }
+}
+
+// Called when the LAST live instance is torn down. Fully release the shared
+// midi-input domain session (not just the listener), so the device/provider
+// session isn't held open after the visualization is gone — and the core domain
+// can close the device once other consumers release it too. Reset readiness so a
+// later re-mount re-discovers and auto-connects from the saved pick.
+function _midiReleaseSession() {
+    _midiConnectSeq += 1;   // invalidate any in-flight _midiConnect open
+    if (_midiHandle && _midiListener) { try { _midiHandle.removeListener(_midiListener); } catch (_) { /* best-effort */ } }
+    const mi = _mi();
+    if (mi && _midiInput) { try { mi.close({ requester: 'piano', logicalSourceKey: _midiInput.key || ('web-midi::' + _midiInput.id) }); } catch (_) { /* best-effort */ } }
+    _midiActive = false;
+    _midiHandle = null;
+    _midiListener = null;
+    _midiInput = null;
+    _midiReady = false;
+    _midiInitPromise = null;
 }
 
 function _midiOnMessage(e) {
@@ -1688,7 +1701,7 @@ function createFactory() {
                 _teardown();
                 _isReady = false;
                 _isFocused = false;
-                if (_instances.size === 0) _midiPauseHandler();
+                if (_instances.size === 0) _midiReleaseSession();
             }
 
             // Clear the destroyed sentinel so an init() following a
@@ -1858,7 +1871,7 @@ function createFactory() {
             // events flowing into _midiOnMessage (which routes to the
             // currently-focused instance).
             if (_instances.size === 0) {
-                _midiPauseHandler();
+                _midiReleaseSession();
             }
             _teardown();
         },
