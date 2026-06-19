@@ -304,7 +304,10 @@ let _midiInitPromise = null;
 
 async function _midiInit() {
     const mi = _mi();
-    if (!mi || _midiReady) return;
+    if (!mi) return;
+    // Already discovered: re-run auto-connect so a re-mount after a full release
+    // (or a settings re-open) reconnects from the saved pick instead of no-opping.
+    if (_midiReady) { _midiAutoConnect(); return; }
     if (_midiInitPromise) return _midiInitPromise;
     _midiInitPromise = (async () => {
         try {
@@ -372,6 +375,11 @@ async function _midiConnect(id) {
     const src = _midiSources().find(s => s.id === id);
     if (!src) { _midiUpdateAllDeviceLists(); return; }
     _midiInput = { id: src.id, name: src.name, key: src.key };   // selection descriptor for the UI
+    // No live renderer to consume OR release a session — don't hold one open
+    // (settings-only init, or the last instance was torn down during async
+    // discovery). The pick is saved; a later renderer mount re-runs auto-connect
+    // and opens for real, and its destroy() releases it.
+    if (_instances.size === 0) { _midiUpdateAllDeviceLists(); return; }
     try {
         await mi.select(src.key);
         const res = await mi.open({ requester: 'piano', logicalSourceKey: src.key });
