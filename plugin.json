@@ -5,17 +5,31 @@
   "type": "visualization",
   "private": false,
   "script": "screen.js",
-  "standards": ["capability-pipelines.v1", "plugin-runtime-idempotent.v1"],
+  "standards": [
+    "capability-pipelines.v1",
+    "plugin-runtime-idempotent.v1"
+  ],
   "capabilities": {
     "midi-input": {
-      "roles": ["requester"],
-      "requests": ["discover", "list-sources", "select-source", "open-source", "close-source"],
+      "roles": [
+        "requester"
+      ],
+      "requests": [
+        "discover",
+        "list-sources",
+        "select-source",
+        "open-source",
+        "close-source"
+      ],
       "mode": "active",
       "compatibility": "degrade-noop",
       "ownership": "requester-only",
       "safety": "sensitive",
-      "description": "Reads the MIDI keyboard input through the core midi-input domain (Web-MIDI provider ships built-in with the domain). Absent domain → no MIDI devices, fail-soft.",
+      "description": "Reads the MIDI keyboard input through the core midi-input domain (Web-MIDI provider ships built-in with the domain). Absent domain \u2192 no MIDI devices, fail-soft.",
       "version": 1
     }
-  }
+  },
+  "category": "practice",
+  "description": "Piano / keys arrangement support.",
+  "icon": "assets/thumb.svg"
 }
