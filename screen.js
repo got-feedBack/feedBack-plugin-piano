@@ -1983,5 +1983,7 @@ createFactory.matchesArrangement = function (songInfo) {
 };
 
 window.slopsmithViz_piano = createFactory;
+// slopsmith→feedBack rename: host viz picker looks up `window.feedBackViz_<id>`.
+window.feedBackViz_piano = window.slopsmithViz_piano;
 
 })();
