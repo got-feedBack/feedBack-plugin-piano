@@ -1,6 +1,6 @@
 # Slopsmith Plugin: Piano Highway
 
-A plugin for [Slopsmith](https://github.com/got-feedback/feedback) that replaces the guitar highway with a Synthesia-style scrolling piano view, with MIDI keyboard input and a built-in software synthesizer.
+A plugin for [Slopsmith](https://github.com/got-feedback/feedBack) that replaces the guitar highway with a Synthesia-style scrolling piano view, with MIDI keyboard input and a built-in software synthesizer.
 
 ![Piano Highway](screenshot.png)
 
@@ -27,7 +27,7 @@ A plugin for [Slopsmith](https://github.com/got-feedback/feedback) that replaces
 
 ```bash
 cd /path/to/slopsmith/plugins
-git clone https://github.com/got-feedback/feedback-plugin-piano.git piano
+git clone https://github.com/got-feedback/feedBack-plugin-piano.git piano
 docker compose restart
 ```
 
@@ -35,7 +35,7 @@ A "Piano" button will appear in the player controls when you play a song. Click 
 
 ## How It Works
 
-The plugin reads note data from the highway renderer and draws them as colored bars falling onto a piano keyboard. Notes use the MIDI encoding convention `midi = string * 24 + fret`, which the [editor plugin](https://github.com/got-feedback/feedback-plugin-editor) uses when importing keyboard tracks from Guitar Pro files.
+The plugin reads note data from the highway renderer and draws them as colored bars falling onto a piano keyboard. Notes use the MIDI encoding convention `midi = string * 24 + fret`, which the [editor plugin](https://github.com/got-feedback/feedBack-plugin-editor) uses when importing keyboard tracks from Guitar Pro files.
 
 For any guitar arrangement, the piano view shows the notes mapped to their MIDI pitch positions, which can be a useful alternative visualization even for guitar parts.
 
