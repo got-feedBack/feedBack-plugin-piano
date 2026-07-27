@@ -51,6 +51,7 @@ const STORE_KEYS = {
     transpose:     'piano_transpose',
     showNoteNames: 'piano_note_names',
     hitDetection:  'piano_hit_detect',
+    handFilter:    'piano_hand_filter',
 };
 
 function _readStore(key) {
@@ -65,6 +66,7 @@ const _cfg = {
     transpose:     parseInt(_readStore(STORE_KEYS.transpose) || '0'),
     showNoteNames: _readStore(STORE_KEYS.showNoteNames) !== 'false',
     hitDetection:  _readStore(STORE_KEYS.hitDetection) === 'true',
+    handFilter:    _readStore(STORE_KEYS.handFilter) || 'both',
 };
 
 function _saveCfg(key, val) {
@@ -926,10 +928,18 @@ function createFactory() {
 
         let foundHit = false;
 
+        // Only score notes visible under the current hand filter.
+        const _hitHf = _cfg.handFilter;
+        const _hitStfPass = (stf) => {
+            if (_hitHf === 'both' || stf === undefined || stf === -1) return true;
+            return _hitHf === 'rh' ? stf === 1 : stf === 0;
+        };
+
         if (notes) {
             for (const n of notes) {
                 if (n.t > t + HIT_TOLERANCE + 0.5) break;
                 if (n.t < t - HIT_TOLERANCE - 0.5) continue;
+                if (!_hitStfPass(n.stf)) continue;
                 const songMidi = noteToMidi(n.s, n.f);
                 const key = _noteKey(n.t, songMidi);
                 if (songMidi === playedMidi && Math.abs(n.t - t) <= HIT_TOLERANCE && !_hitNoteKeys.has(key)) {
@@ -945,6 +955,7 @@ function createFactory() {
                 if (c.t > t + HIT_TOLERANCE + 0.5) break;
                 if (c.t < t - HIT_TOLERANCE - 0.5) continue;
                 for (const cn of (c.notes || [])) {
+                    if (!_hitStfPass(cn.stf)) continue;
                     const songMidi = noteToMidi(cn.s, cn.f);
                     const key = _noteKey(c.t, songMidi);
                     if (songMidi === playedMidi && Math.abs(c.t - t) <= HIT_TOLERANCE && !_hitNoteKeys.has(key)) {
@@ -972,10 +983,19 @@ function createFactory() {
         if (!_cfg.hitDetection) return;
         const cutoff = t - HIT_TOLERANCE - 0.05;
 
+        // Use same hand filter as hit detection and rendering —
+        // filtered-out notes can't be missed.
+        const _missHf = _cfg.handFilter;
+        const _missStfPass = (stf) => {
+            if (_missHf === 'both' || stf === undefined || stf === -1) return true;
+            return _missHf === 'rh' ? stf === 1 : stf === 0;
+        };
+
         if (notes) {
             for (const n of notes) {
                 if (n.t > cutoff) break;
                 if (n.t < cutoff - 2) continue;
+                if (!_missStfPass(n.stf)) continue;
                 const songMidi = noteToMidi(n.s, n.f);
                 const key = _noteKey(n.t, songMidi);
                 if (!_hitNoteKeys.has(key) && !_missedNoteKeys.has(key) && n.t < cutoff) {
@@ -988,6 +1008,7 @@ function createFactory() {
                 if (c.t > cutoff) break;
                 if (c.t < cutoff - 2) continue;
                 for (const cn of (c.notes || [])) {
+                    if (!_missStfPass(cn.stf)) continue;
                     const songMidi = noteToMidi(cn.s, cn.f);
                     const key = _noteKey(c.t, songMidi);
                     if (!_hitNoteKeys.has(key) && !_missedNoteKeys.has(key) && c.t < cutoff) {
@@ -1262,6 +1283,15 @@ function createFactory() {
                     <input type="checkbox" class="piano-chk-hits" ${_cfg.hitDetection ? 'checked' : ''}
                         style="accent-color:#22cc66;"> Hits
                 </label>
+                <div style="display:flex;align-items:center;gap:4px;">
+                    <span style="font-size:10px;color:#666;">Hand</span>
+                    <select class="piano-hand-select" style="background:#1a1a2e;border:1px solid #333;border-radius:6px;
+                        padding:3px 6px;font-size:11px;color:#ccc;outline:none;">
+                        <option value="both"${_cfg.handFilter === 'both' ? ' selected' : ''}>Both</option>
+                        <option value="rh"${_cfg.handFilter === 'rh' ? ' selected' : ''}>RH only</option>
+                        <option value="lh"${_cfg.handFilter === 'lh' ? ' selected' : ''}>LH only</option>
+                    </select>
+                </div>
             </div>`;
 
         if (panelChrome) {
@@ -1308,6 +1338,9 @@ function createFactory() {
         panel.querySelector('.piano-chk-hits').onchange = function () {
             _saveCfg('hitDetection', this.checked);
             if (this.checked) _resetScoring();
+        };
+        panel.querySelector('.piano-hand-select').onchange = function () {
+            _saveCfg('handFilter', this.value);
         };
     }
 
@@ -1429,11 +1462,20 @@ function createFactory() {
     function _drawScrollingNotes(ctx, notes, chords, t, layout, topY, nowLineY) {
         const allNotes = [];
 
+        // stf: -1=no staff data, 0=LH/bass, 1=RH/treble (slopsmith staff schema).
+        // When stf is absent/-1 the filter is a no-op — all notes pass through.
+        const _hf = _cfg.handFilter;
+        const _stfPass = (stf) => {
+            if (_hf === 'both' || stf === undefined || stf === -1) return true;
+            return _hf === 'rh' ? stf === 1 : stf === 0;
+        };
+
         if (notes) {
             for (const n of notes) {
                 const dt = n.t - t;
                 if (dt > VISIBLE_SECONDS + 1) break;
                 if (dt < -1 && (n.t + (n.sus || 0)) < t - 0.5) continue;
+                if (!_stfPass(n.stf)) continue;
                 allNotes.push({ midi: noteToMidi(n.s, n.f), t: n.t, sus: n.sus || 0, accent: n.ac });
             }
         }
@@ -1443,6 +1485,7 @@ function createFactory() {
                 if (dt > VISIBLE_SECONDS + 1) break;
                 if (dt < -1) continue;
                 for (const cn of (c.notes || [])) {
+                    if (!_stfPass(cn.stf)) continue;
                     allNotes.push({ midi: noteToMidi(cn.s, cn.f), t: c.t, sus: cn.sus || 0, accent: cn.ac });
                 }
             }
@@ -1526,11 +1569,18 @@ function createFactory() {
     function _drawKeyboard(ctx, layout, kbTop, kbH, notes, chords, t) {
         const songActiveSet = new Set();
         const window_ = 0.06;
+        // Apply hand filter to keyboard highlighting — only visible notes light up keys.
+        const _kbHf = _cfg.handFilter;
+        const _kbStfPass = (stf) => {
+            if (_kbHf === 'both' || stf === undefined || stf === -1) return true;
+            return _kbHf === 'rh' ? stf === 1 : stf === 0;
+        };
         if (notes) {
             for (const n of notes) {
                 if (n.t > t + window_) continue;
                 const end = n.t + (n.sus || 0);
                 if (end < t - window_) continue;
+                if (!_kbStfPass(n.stf)) continue;
                 if (n.t <= t + window_ && end >= t - window_)
                     songActiveSet.add(noteToMidi(n.s, n.f));
             }
@@ -1540,6 +1590,7 @@ function createFactory() {
                 if (c.t > t + window_) continue;
                 if (c.t < t - 1) continue;
                 for (const cn of (c.notes || [])) {
+                    if (!_kbStfPass(cn.stf)) continue;
                     const end = c.t + (cn.sus || 0);
                     if (c.t <= t + window_ && end >= t - window_)
                         songActiveSet.add(noteToMidi(cn.s, cn.f));
