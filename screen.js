@@ -641,10 +641,10 @@ function detectRange(notes, chords) {
             }
         }
     }
-    if (lo > hi) { lo = 48; hi = 84; }
+    if (lo > hi) { lo = 36; hi = 83; }
     lo = Math.max(0, Math.floor(lo / 12) * 12);
     hi = Math.min(127, Math.ceil((hi + 1) / 12) * 12 - 1);
-    while (hi - lo < 47) { hi = Math.min(127, hi + 12); if (hi - lo < 47 && lo > 0) lo -= 12; }
+    while (hi - lo < 47) { if (hi < 127) hi = Math.min(127, hi + 12); if (hi - lo < 47 && lo > 0) lo -= 12; }
     return { lo, hi };
 }
 
@@ -1035,14 +1035,11 @@ function createFactory() {
                 _displayLo = full.lo;
                 _displayHi = full.hi;
             } else {
-                // 48 = C3, 95 = B6 — matches detectRange's
-                // empty-chart fallback after octave-boundary
-                // rounding + the 47-semitone-minimum-span while
-                // loop. Keeping these in lockstep means the two
-                // fallback paths produce the same visible
-                // keyboard span.
-                _displayLo = 48;
-                _displayHi = 95;
+                // 36 = C2, 83 = B5 — centred around middle C (60),
+                // kept in lockstep with detectRange's empty-chart
+                // fallback so both paths produce the same span.
+                _displayLo = 36;
+                _displayHi = 83;
             }
             return;
         }
@@ -1058,7 +1055,8 @@ function createFactory() {
         lo = Math.floor(lo / 12) * 12;
         hi = Math.ceil((hi + 1) / 12) * 12 - 1;
         while (hi - lo < 47) {
-            if (lo > 0) lo -= 12; else hi = Math.min(127, hi + 12);
+            if (hi < 127) hi = Math.min(127, hi + 12);
+            if (hi - lo < 47 && lo > 0) lo -= 12;
         }
 
         _displayLo = lo;
