@@ -10,7 +10,7 @@ A plugin for [Slopsmith](https://github.com/got-feedback/feedback) that replaces
 - **Neon rainbow colors** — each chromatic pitch gets a unique neon color with multi-layer glow effects
 - **Polished keyboard** — 3D gradient shading, rounded corners, press-down animation, and approach color lerping as notes get closer
 - **Dynamic zoom** — keyboard auto-scales to show only the octaves with active notes, snapping in clean octave steps
-- **Auto-activate** — switches on automatically for Keys/Piano/Synth arrangements
+- **Auto-activate** — picked automatically in the **Auto** visualization mode for Keys/Piano/Synth arrangements
 - **MIDI keyboard input** — connect any USB MIDI keyboard via Web MIDI API to play along
 - **Hit/miss feedback** — keys glow green for correct notes, blue for freestyle, red for wrong notes
 - **Built-in synthesizer** — WebAudioFont-powered playback with 10 GM instruments (Grand Piano, Electric Piano, Organ, Strings, Synth, and more)
@@ -31,7 +31,16 @@ git clone https://github.com/got-feedback/feedback-plugin-piano.git piano
 docker compose restart
 ```
 
-A "Piano" button will appear in the player controls when you play a song. Click the gear icon next to it to configure MIDI input and sound settings.
+Piano Highway is also bundled with the feedBack Desktop app.
+
+## Usage
+
+Piano Highway is a visualization, so it replaces the highway instead of adding a button.
+
+1. Play a song.
+2. Open the visualization picker (**Visualization & quality** on the player rail) and choose **Piano Highway**. With **Auto (match arrangement)** selected, it is picked automatically for Keys, Piano, Keyboard or Synth arrangements. Notation-only arrangements are left to the notation visualizations (Staff View, Keys Highway 3D).
+3. While Piano Highway is active, a ⚙ gear button opens the MIDI input and sound settings. In the v3 UI the gear sits in the **Plugin controls** popover on the player rail. Under splitscreen it sits in each panel's bar.
+4. Pick another visualization (for example **Classic 2D Highway**) to switch back.
 
 ## How It Works
 
